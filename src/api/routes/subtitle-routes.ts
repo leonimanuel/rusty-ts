@@ -4,14 +4,16 @@ import { SubtitleController } from '../controllers/subtitle-controller'
 const router = Router({ mergeParams: true })  // mergeParams allows access to parent route params
 const subtitleController = new SubtitleController()
 
-// POST /api/videos/:videoId/subtitles/transcribe
+// POST /api/audio-tracks/:audioTrackId/subtitles/transcribe
+// Creates subtitles by transcribing the audio track using Whisper
 router.post('/transcribe', async (req: Request, res: Response) => {
-  await subtitleController.createFromTranscription(req, res)
+  await subtitleController.transcribe(req, res)
 })
 
-// POST /api/videos/:videoId/subtitles/translate
+// POST /api/audio-tracks/:audioTrackId/subtitles/translate
+// Creates translated subtitles from an existing subtitle
 router.post('/translate', async (req: Request, res: Response) => {
-  await subtitleController.createFromTranslation(req, res)
+  await subtitleController.translate(req, res)
 })
 
 export default router 
