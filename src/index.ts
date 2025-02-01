@@ -1,4 +1,7 @@
 import 'dotenv/config'
+import app from './api/app'
+
+const PORT = process.env.PORT || 3000
 
 process.on('SIGINT', () => {
 	console.log('\nGracefully shutting down')
@@ -7,9 +10,10 @@ process.on('SIGINT', () => {
 
 function main() {
 	try {
-		console.log('🎉 Party time! Your app is ready to rock!\n')
-		console.log('👉 Edit \x1b[38;5;208msrc/index.ts\x1b[0m and watch the magic happen here!')
-		console.log('   Lets build something amazing!')
+		app.listen(PORT, () => {
+			console.log(`🚀 Server is running on port ${PORT}`)
+			console.log('Ready to handle video subtitle requests!')
+		})
 	} catch (error) {
 		console.error('Failed to start:', error)
 		process.exit(1)

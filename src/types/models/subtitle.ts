@@ -2,7 +2,7 @@ import { SupportedLanguage } from '../common'
 
 export interface Subtitle {
   id: string
-  video_id: string
+  audio_track_id: string
   language: SupportedLanguage
   srt_data: string
   created_at: Date
