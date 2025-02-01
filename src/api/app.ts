@@ -1,5 +1,6 @@
 import express from 'express'
 import videoRoutes from './routes/video-routes'
+import authRoutes from './routes/auth-routes'
 
 const app = express()
 
@@ -7,6 +8,7 @@ const app = express()
 app.use(express.json())
 
 // API Routes
+app.use('/api/auth', authRoutes)
 app.use('/api/videos', videoRoutes)
 
 // Error handling middleware
