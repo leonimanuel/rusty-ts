@@ -1,126 +1,35 @@
-import axios, { AxiosError } from 'axios';
-import OpenAI from 'openai';
-import { TranscriptionConfig, TranscriptionResponse, SubtitleOptions, UploadResponse, OpenAIConfig, SRTBlock } from './types';
+import { OpenAI } from 'openai';
+import { OpenAIConfig, SRTBlock } from './types';
 
 export class SubtitleService {
-  private readonly assemblyAIKey: string;
-  private readonly assemblyAIBaseUrl = 'https://api.assemblyai.com/v2';
-  private readonly assemblyAIHeaders: Record<string, string>;
   private readonly openai: OpenAI;
 
-  constructor(config: TranscriptionConfig & OpenAIConfig) {
-    this.assemblyAIKey = config.apiKey;
-    this.assemblyAIHeaders = {
-      'Authorization': this.assemblyAIKey,
-      'Content-Type': 'application/json',
-    };
+  constructor(config: OpenAIConfig) {
     this.openai = new OpenAI({
       apiKey: config.apiKey,
     });
   }
 
-  async uploadFile(fileUrl: string): Promise<string> {
+  async transcribeToSRT(audioUrl: string): Promise<string> {
     try {
-      console.log('Making upload request with headers:', {
-        ...this.assemblyAIHeaders,
-        'Authorization': '****' + this.assemblyAIHeaders.Authorization.slice(-4)
+      // Download the file from the URL
+      const response = await fetch(audioUrl);
+      const audioBlob = await response.blob();
+      
+      // Convert Blob to File object
+      const file = new File([audioBlob], 'audio.mp3', { type: 'audio/mpeg' });
+
+      const transcription = await this.openai.audio.transcriptions.create({
+        file,
+        model: 'whisper-1',
+        response_format: 'srt'
       });
-      
-      const response = await axios.post<UploadResponse>(
-        `${this.assemblyAIBaseUrl}/upload`,
-        { url: fileUrl },
-        { headers: this.assemblyAIHeaders }
-      );
-      return response.data.upload_url;
+
+      // OpenAI returns the SRT content directly as a string when response_format is 'srt'
+      return transcription as unknown as string;
     } catch (error) {
-      if (error instanceof AxiosError) {
-        console.error('Upload failed with status:', error.response?.status);
-        console.error('Error response:', error.response?.data);
-        console.error('Request config:', {
-          url: error.config?.url,
-          method: error.config?.method,
-          headers: {
-            ...error.config?.headers,
-            'Authorization': '****'
-          }
-        });
-      }
-      throw error;
-    }
-  }
-
-  async transcribe(audioUrl: string): Promise<string> {
-    try {
-      // Start transcription
-      const transcriptionResponse = await axios.post<TranscriptionResponse>(
-        `${this.assemblyAIBaseUrl}/transcript`,
-        { audio_url: audioUrl },
-        { headers: this.assemblyAIHeaders }
-      );
-
-      const transcriptId = transcriptionResponse.data.id;
-      console.log('Transcription started, ID:', transcriptId);
-      
-      // Poll for completion
-      while (true) {
-        const status = await this.getTranscriptionStatus(transcriptId);
-        console.log('Status:', status.status);
-        
-        if (status.status === 'completed') {
-          return transcriptId;
-        }
-        
-        if (status.status === 'error') {
-          throw new Error(`Transcription failed: ${status.error}`);
-        }
-
-        // Wait 3 seconds before polling again
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      }
-    } catch (error) {
-      if (error instanceof AxiosError) {
-        throw new Error(`API Error: ${error.response?.status} - ${error.response?.statusText}`);
-      }
-      throw error;
-    }
-  }
-
-  private async getTranscriptionStatus(transcriptId: string): Promise<TranscriptionResponse> {
-    try {
-      const response = await axios.get<TranscriptionResponse>(
-        `${this.assemblyAIBaseUrl}/transcript/${transcriptId}`,
-        { headers: this.assemblyAIHeaders }
-      );
-      return response.data;
-    } catch (error) {
-      if (error instanceof AxiosError) {
-        throw new Error(`Status check failed: ${error.response?.status} - ${error.response?.statusText}`);
-      }
-      throw error;
-    }
-  }
-
-  async getSubtitles(transcriptId: string, options: SubtitleOptions): Promise<string> {
-    try {
-      const params = new URLSearchParams();
-      if (options.charsPerCaption) {
-        params.append('chars_per_caption', options.charsPerCaption.toString());
-      }
-
-      const response = await axios.get(
-        `${this.assemblyAIBaseUrl}/transcript/${transcriptId}/${options.format}?${params.toString()}`,
-        {
-          headers: this.assemblyAIHeaders,
-          responseType: 'text'
-        }
-      );
-      
-      return response.data;
-    } catch (error) {
-      if (error instanceof AxiosError) {
-        throw new Error(`Subtitle generation failed: ${error.response?.status} - ${error.response?.statusText}`);
-      }
-      throw error;
+      console.error('Error transcribing audio:', error);
+      throw new Error('Failed to transcribe audio');
     }
   }
 
