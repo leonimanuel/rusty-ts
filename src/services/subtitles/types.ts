@@ -4,6 +4,11 @@ export interface TranscriptionConfig {
   charsPerCaption?: number;
 }
 
+export interface OpenAIConfig {
+  apiKey: string;
+  model?: string;
+}
+
 export interface TranscriptionResponse {
   id: string;
   status: 'queued' | 'processing' | 'completed' | 'error';
@@ -18,4 +23,10 @@ export interface SubtitleOptions {
 
 export interface UploadResponse {
   upload_url: string;
+}
+
+export interface SRTBlock {
+  index: number;
+  timecode: string;
+  text: string;
 } 
