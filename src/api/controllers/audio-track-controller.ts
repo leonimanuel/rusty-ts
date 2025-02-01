@@ -14,8 +14,26 @@ export class AudioTrackController {
       const { videoId } = req.params;
       const { language_code } = req.body;
 
+      if (!videoId) {
+        return res.status(400).json({ error: 'videoId is required in URL parameters' });
+      }
+
       if (!language_code) {
-        return res.status(400).json({ error: 'language_code is required' });
+        return res.status(400).json({ error: 'language_code is required in request body' });
+      }
+
+      // Verify video exists
+      const { data: video, error: videoError } = await supabase
+        .from('videos')
+        .select('id')
+        .eq('id', videoId)
+        .single();
+
+      if (videoError || !video) {
+        return res.status(404).json({ 
+          error: 'Video not found',
+          details: videoError?.message 
+        });
       }
 
       // Check if audio track already exists
