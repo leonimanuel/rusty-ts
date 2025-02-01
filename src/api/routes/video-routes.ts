@@ -1,12 +1,9 @@
-import { Router, Request, Response } from 'express'
-import { VideoController } from '../controllers/video-controller'
+import { Router } from 'express'
+import subtitleRoutes from './subtitle-routes'
 
 const router = Router()
-const videoController = new VideoController()
 
-// POST /api/videos/:videoId/subtitles
-router.post('/:videoId/subtitles', async (req: Request, res: Response) => {
-  await videoController.createSubtitles(req, res)
-})
+// Mount subtitle routes under videos
+router.use('/:videoId/subtitles', subtitleRoutes)
 
 export default router
