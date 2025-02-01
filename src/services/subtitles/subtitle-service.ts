@@ -1,30 +1,35 @@
 import axios, { AxiosError } from 'axios';
-import { TranscriptionConfig, TranscriptionResponse, SubtitleOptions, UploadResponse } from './types';
+import OpenAI from 'openai';
+import { TranscriptionConfig, TranscriptionResponse, SubtitleOptions, UploadResponse, OpenAIConfig, SRTBlock } from './types';
 
 export class SubtitleService {
-  private readonly apiKey: string;
-  private readonly baseUrl = 'https://api.assemblyai.com/v2';
-  private readonly headers: Record<string, string>;
+  private readonly assemblyAIKey: string;
+  private readonly assemblyAIBaseUrl = 'https://api.assemblyai.com/v2';
+  private readonly assemblyAIHeaders: Record<string, string>;
+  private readonly openai: OpenAI;
 
-  constructor(config: TranscriptionConfig) {
-    this.apiKey = config.apiKey;
-    this.headers = {
-      'Authorization': this.apiKey,
+  constructor(config: TranscriptionConfig & OpenAIConfig) {
+    this.assemblyAIKey = config.apiKey;
+    this.assemblyAIHeaders = {
+      'Authorization': this.assemblyAIKey,
       'Content-Type': 'application/json',
     };
+    this.openai = new OpenAI({
+      apiKey: config.apiKey,
+    });
   }
 
   async uploadFile(fileUrl: string): Promise<string> {
     try {
       console.log('Making upload request with headers:', {
-        ...this.headers,
-        'Authorization': '****' + this.headers.Authorization.slice(-4)
+        ...this.assemblyAIHeaders,
+        'Authorization': '****' + this.assemblyAIHeaders.Authorization.slice(-4)
       });
       
       const response = await axios.post<UploadResponse>(
-        `${this.baseUrl}/upload`,
+        `${this.assemblyAIBaseUrl}/upload`,
         { url: fileUrl },
-        { headers: this.headers }
+        { headers: this.assemblyAIHeaders }
       );
       return response.data.upload_url;
     } catch (error) {
@@ -48,9 +53,9 @@ export class SubtitleService {
     try {
       // Start transcription
       const transcriptionResponse = await axios.post<TranscriptionResponse>(
-        `${this.baseUrl}/transcript`,
+        `${this.assemblyAIBaseUrl}/transcript`,
         { audio_url: audioUrl },
-        { headers: this.headers }
+        { headers: this.assemblyAIHeaders }
       );
 
       const transcriptId = transcriptionResponse.data.id;
@@ -83,8 +88,8 @@ export class SubtitleService {
   private async getTranscriptionStatus(transcriptId: string): Promise<TranscriptionResponse> {
     try {
       const response = await axios.get<TranscriptionResponse>(
-        `${this.baseUrl}/transcript/${transcriptId}`,
-        { headers: this.headers }
+        `${this.assemblyAIBaseUrl}/transcript/${transcriptId}`,
+        { headers: this.assemblyAIHeaders }
       );
       return response.data;
     } catch (error) {
@@ -103,9 +108,9 @@ export class SubtitleService {
       }
 
       const response = await axios.get(
-        `${this.baseUrl}/transcript/${transcriptId}/${options.format}?${params.toString()}`,
+        `${this.assemblyAIBaseUrl}/transcript/${transcriptId}/${options.format}?${params.toString()}`,
         {
-          headers: this.headers,
+          headers: this.assemblyAIHeaders,
           responseType: 'text'
         }
       );
@@ -116,6 +121,64 @@ export class SubtitleService {
         throw new Error(`Subtitle generation failed: ${error.response?.status} - ${error.response?.statusText}`);
       }
       throw error;
+    }
+  }
+
+  private parseSRT(srtContent: string): SRTBlock[] {
+    const blocks = srtContent.trim().split('\n\n');
+    return blocks.map(block => {
+      const [index, timecode, ...textLines] = block.split('\n');
+      return {
+        index: parseInt(index),
+        timecode,
+        text: textLines.join(' ')
+      };
+    });
+  }
+
+  private formatSRT(blocks: SRTBlock[]): string {
+    return blocks.map(block => 
+      `${block.index}\n${block.timecode}\n${block.text}`
+    ).join('\n\n');
+  }
+
+  async translateSubtitles(srtContent: string, targetLanguage: string): Promise<string> {
+    try {
+      // Parse SRT into blocks
+      const blocks = this.parseSRT(srtContent);
+      
+      // Translate each block's text
+      const translatedBlocks = await Promise.all(
+        blocks.map(async block => {
+          const prompt = `Translate the following subtitle text to ${targetLanguage}. Maintain the same tone and style, and ensure the translation fits the timing constraints:\n\n${block.text}`;
+          
+          const completion = await this.openai.chat.completions.create({
+            model: 'gpt-4',
+            messages: [
+              {
+                role: 'system',
+                content: 'You are a professional subtitle translator. Provide only the translated text without any explanations or additional content.'
+              },
+              {
+                role: 'user',
+                content: prompt
+              }
+            ],
+            temperature: 0.7,
+          });
+
+          return {
+            ...block,
+            text: completion.choices[0].message.content?.trim() || block.text
+          };
+        })
+      );
+
+      // Format back to SRT
+      return this.formatSRT(translatedBlocks);
+    } catch (error) {
+      console.error('Error translating subtitles:', error);
+      throw new Error('Failed to translate subtitles');
     }
   }
 } 
