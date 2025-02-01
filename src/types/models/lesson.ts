@@ -1,9 +1,10 @@
-export interface Lesson {
-  id: string
+import { BaseModel } from '../common';
+
+export interface Lesson extends BaseModel {
   title: string
-  description: string | null
-  created_at: Date
-  updated_at: Date
+  description?: string
+  guide_id?: string
+  order_index: number
 }
 
 export type LessonInsert = Omit<Lesson, 'id' | 'created_at' | 'updated_at'>
