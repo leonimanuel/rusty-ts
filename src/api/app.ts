@@ -1,6 +1,8 @@
 import express from 'express'
 import videoRoutes from './routes/video-routes'
 import authRoutes from './routes/auth-routes'
+import companyRoutes from './routes/company-routes'
+import profileRoutes from './routes/profile-routes'
 
 const app = express()
 
@@ -10,6 +12,8 @@ app.use(express.json())
 // API Routes
 app.use('/api/auth', authRoutes)
 app.use('/api/videos', videoRoutes)
+app.use('/api/companies', companyRoutes)
+app.use('/api/profiles', profileRoutes)
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
