@@ -50,7 +50,8 @@ export class LessonController {
               audio_tracks(
                 id,
                 url,
-                language
+                language,
+                subtitles(srt_data)
               )
             )
           )
