@@ -32,10 +32,10 @@ export class SubtitleController {
       }
 
       // Get SRT directly from Whisper
-      const srtData = await this.subtitleService.transcribeToSRT(audioTrack.url)
+      const srtData = await this.subtitleService.transcribeToVTT(audioTrack.url)
 
       const subtitleData: SubtitleInsert = {
-        audio_track_id: audioTrackId,
+        video_id: audioTrackId,
         language,
         srt_data: srtData
       }
@@ -114,7 +114,7 @@ export class SubtitleController {
       )
 
       const subtitleData: SubtitleInsert = {
-        audio_track_id: audioTrackId,
+        video_id: audioTrackId,
         language: targetLanguage,
         srt_data: translatedSrt
       }

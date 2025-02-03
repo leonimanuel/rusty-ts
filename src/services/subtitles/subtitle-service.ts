@@ -1,5 +1,6 @@
 import { OpenAI } from 'openai';
 import { OpenAIConfig, SRTBlock } from './types';
+import { readFile } from 'fs/promises';
 
 export class SubtitleService {
   private readonly openai: OpenAI;
@@ -10,26 +11,35 @@ export class SubtitleService {
     });
   }
 
-  async transcribeToSRT(audioUrl: string): Promise<string> {
+  async transcribeToVTT(input: string | File): Promise<string> {
     try {
-      // Download the file from the URL
-      const response = await fetch(audioUrl);
-      const audioBlob = await response.blob();
+      let file: File
       
-      // Convert Blob to File object
-      const file = new File([audioBlob], 'audio.mp3', { type: 'audio/mpeg' });
+      if (typeof input === 'string') {
+        if (input.startsWith('http')) {
+          // Handle URL
+          const response = await fetch(input)
+          const audioBlob = await response.blob()
+          file = new File([audioBlob], 'audio.mp3', { type: 'audio/mpeg' })
+        } else {
+          // Handle file path
+          const buffer = await readFile(input)
+          file = new File([buffer], 'audio.mp3', { type: 'audio/mpeg' })
+        }
+      } else {
+        file = input
+      }
 
       const transcription = await this.openai.audio.transcriptions.create({
         file,
         model: 'whisper-1',
-        response_format: 'srt'
-      });
+        response_format: 'vtt'
+      })
 
-      // OpenAI returns the SRT content directly as a string when response_format is 'srt'
-      return transcription as unknown as string;
+      return transcription as unknown as string
     } catch (error) {
-      console.error('Error transcribing audio:', error);
-      throw new Error('Failed to transcribe audio');
+      console.error('Error transcribing audio:', error)
+      throw new Error('Failed to transcribe audio')
     }
   }
 
