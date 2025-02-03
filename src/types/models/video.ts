@@ -1,6 +1,5 @@
 export interface Video {
   id: string
-  lesson_id: string
   url: string
   title: string | null
   description: string | null
