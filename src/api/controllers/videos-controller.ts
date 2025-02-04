@@ -9,6 +9,7 @@ import { join } from 'path'
 import os from 'os'
 import { SupportedLanguage } from '../../types/common'
 import { SubtitleInsert } from '../../types/models/subtitle'
+import { AudioService } from '../../services/audio/audio-service'
 
 const execAsync = promisify(exec)
 
@@ -32,11 +33,13 @@ const getISO6392Code = (iso6391: SupportedLanguage): ISO6392Code => {
 
 export class VideosController {
   private subtitleService: SubtitleService
+  private audioService: AudioService
 
   constructor() {
     this.subtitleService = new SubtitleService({
       apiKey: process.env.OPENAI_API_KEY || ''
     })
+    this.audioService = new AudioService()
   }
 
   /**
@@ -112,6 +115,7 @@ export class VideosController {
 
       // Generate and upload translated subtitles
       const translatedVttUrls: Record<string, string> = {}
+      const translatedSubtitles: Array<{language: SupportedLanguage, srt_data: string}> = []
       
       if (languages.length > 0) {
         console.log('Starting subtitle translations...')
@@ -123,6 +127,12 @@ export class VideosController {
           const translatedSrtPath = join(tempDir, `temp_${Date.now()}_${lang}.srt`)
           await writeFile(translatedSrtPath, translatedSrt)
           translatedSrtPaths.push(translatedSrtPath)
+
+          // Store translated subtitle data for audio generation
+          translatedSubtitles.push({
+            language: lang,
+            srt_data: translatedSrt
+          })
 
           // Convert SRT to VTT and upload
           const translatedVttPath = join(tempDir, `temp_${Date.now()}_${lang}.vtt`)
@@ -156,6 +166,23 @@ export class VideosController {
         console.log('All translations completed and uploaded')
       }
 
+      // Generate audio tracks from translated subtitles
+      console.log('Generating audio tracks...')
+      const audioFiles = await Promise.all(
+        translatedSubtitles.map(async ({ language, srt_data }) => {
+          console.log(`Generating audio for ${language}...`)
+          const audioBuffer = await this.audioService.generateAudioFromVTT(
+            srt_data,
+            { targetLanguage: language }
+          )
+
+          // Save audio temporarily
+          const audioPath = join(tempDir, `audio_${language}.mp3`)
+          await writeFile(audioPath, audioBuffer)
+          return { lang: language, path: audioPath }
+        })
+      )
+
       const getLanguageTitle = (code: SupportedLanguage): string => {
         const titles: Record<SupportedLanguage, string> = {
           en: 'English',
@@ -172,36 +199,44 @@ export class VideosController {
         return titles[code]
       }
 
-      // Construct ffmpeg command with all subtitle tracks
-      console.log('Adding all subtitle tracks to video...')
+      // Construct ffmpeg command with all subtitle and audio tracks
+      console.log('Adding all tracks to video...')
       const inputFiles = [
         `-i "${tempVideoPath}"`,
         `-i "${tempSrtPath}"`, // English subtitles
-        ...translatedSrtPaths.map(path => `-i "${path}"`)
+        ...translatedSrtPaths.map(path => `-i "${path}"`), // Translated subtitles
+        ...audioFiles.map(({path}) => `-i "${path}"`) // Audio tracks
       ].join(' ')
 
       const mappings = [
         `-map 0:v`, // video stream
-        `-map 0:a`, // audio stream
+        `-map 0:a`, // original audio stream
         `-map 1`, // English subtitles
-        ...translatedSrtPaths.map((_, index) => `-map ${index + 2}`) // translated subtitles
+        ...translatedSrtPaths.map((_, index) => `-map ${index + 2}`), // translated subtitles
+        ...audioFiles.map((_, index) => 
+          `-map ${index + 2 + translatedSrtPaths.length}`) // audio tracks
       ].join(' ')
 
-      // Metadata for each subtitle stream
-      const subtitleMetadata = [
-        // English subtitles (stream 2)
-        `-disposition:s:2 default`,
-        `-metadata:s:2 language=${getISO6392Code('en')}`,
-        `-metadata:s:2 handler_name="English"`,
-        `-metadata:s:2 title="English"`,
+      // Metadata for subtitle and audio streams
+      const metadata = [
+        // English subtitles (first subtitle stream)
+        `-disposition:s:0 default`,
+        `-metadata:s:s:0 language=${getISO6392Code('en')}`,
+        `-metadata:s:s:0 handler_name="English"`,
+        // Original audio (first audio stream)
+        `-metadata:s:a:0 language=${getISO6392Code('en')}`,
+        `-metadata:s:a:0 handler_name="Original Audio"`,
         // Additional languages
         ...languages.map((lang, index) => {
           const title = getLanguageTitle(lang)
           return [
-            `-disposition:s:${index + 3} 0`,
-            `-metadata:s:${index + 3} language=${getISO6392Code(lang)}`,
-            `-metadata:s:${index + 3} handler_name="${title}"`,
-            `-metadata:s:${index + 3} title="${title}"`
+            // Subtitle metadata (subsequent subtitle streams)
+            `-disposition:s:${index + 1} 0`,
+            `-metadata:s:s:${index + 1} language=${getISO6392Code(lang)}`,
+            `-metadata:s:s:${index + 1} handler_name="${title} Subtitles"`,
+            // Audio track metadata (subsequent audio streams)
+            `-metadata:s:a:${index + 1} language=${getISO6392Code(lang)}`,
+            `-metadata:s:a:${index + 1} handler_name="${title} Audio"`
           ].join(' ')
         })
       ].join(' ')
@@ -209,15 +244,21 @@ export class VideosController {
       const ffmpegCommand = `ffmpeg ${[
         inputFiles,
         mappings,
-        `-c:v copy -c:a copy`,
+        `-c:v copy`,
+        `-c:a aac`, // Convert audio to AAC for better compatibility
         `-c:s mov_text`,
-        subtitleMetadata,
+        metadata,
         `-movflags +faststart`,  // Optimize for streaming
         `"${outputVideoPath}"`
       ].join(' ')}`
 
       await execAsync(ffmpegCommand)
-      console.log('All subtitle tracks added successfully')
+      console.log('All tracks added successfully')
+
+      // Clean up audio files
+      for (const {path} of audioFiles) {
+        await unlink(path)
+      }
 
       // Verify subtitle tracks with ffprobe
       console.log('Verifying subtitle tracks...')
@@ -228,13 +269,13 @@ export class VideosController {
       const probeData = JSON.parse(probeOutput)
       const subtitleStreams = probeData.streams.filter((s: any) => s.codec_type === 'subtitle')
       
-      // console.log('Detected subtitle tracks:', subtitleStreams.map((s: any) => ({
-      //   index: s.index,
-      //   codec: s.codec_name,
-      //   language: s.tags?.language,
-      //   handler: s.tags?.handler_name,
-      //   title: s.tags?.title
-      // })))
+      console.log('Detected subtitle tracks:', subtitleStreams.map((s: any) => ({
+        index: s.index,
+        codec: s.codec_name,
+        language: s.tags?.language,
+        handler: s.tags?.handler_name,
+        title: s.tags?.title
+      })))
 
       // console.log('Reading output video...')
       const videoBuffer = await readFile(outputVideoPath)
@@ -281,8 +322,6 @@ export class VideosController {
         throw videoError
       }
 
-      console.log('Video record created successfully:', savedVideo)
-
       // Create lesson_video record if lessonId is provided
       if (lessonId) {
         console.log('Creating lesson_video record...')
@@ -325,7 +364,7 @@ export class VideosController {
       }
 
       // Create translated subtitle records
-      const translatedSubtitles = await Promise.all(
+      const translatedSubtitlesInsert = await Promise.all(
         languages.map(async (lang) => {
           const subtitleData: SubtitleInsert = {
             video_id: savedVideo.id,
@@ -349,14 +388,14 @@ export class VideosController {
 
       console.log('All subtitle records created successfully')
 
-      console.log('Video processing completed successfully')
       return res.status(201).json({
         message: 'Video created successfully',
-        video: savedVideo,
-        subtitles: {
-          en: englishSubtitleData,
-          ...Object.fromEntries(translatedSubtitles.map(s => [s.language, s]))
-        }
+        url: publicUrl.publicUrl,
+        // video: savedVideo,
+        // subtitles: {
+          // en: englishSubtitleData,
+      //     ...Object.fromEntries(translatedSubtitles.map(s => [s.language, s]))
+      //   },
       })
     } catch (error) {
       console.error('Error creating video:', {

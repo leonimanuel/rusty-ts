@@ -52,23 +52,16 @@ export class AudioService {
     });
   }
 
-  async translateAudioFromSRT(
-    srtData: string,
+  async generateAudioFromVTT(
+    vttData: string,
     config: AudioTranslationConfig
   ): Promise<Buffer> {
     try {
-      console.log('Starting SRT-based audio translation process...');
-      
-      // Use SubtitleService to translate the SRT content
-      console.log('Translating subtitles...');
-      const translatedSRT = await this.subtitleService.translateSubtitles(
-        srtData,
-        config.targetLanguage
-      );
+      console.log('Starting VTT-based audio generation process...');
 
       // Parse the translated SRT into blocks with timing
-      const blocks = this.parseSRTWithTiming(translatedSRT);
-      console.log(`Parsed ${blocks.length} translated SRT blocks`);
+      const blocks = this.parseSRTWithTiming(vttData);
+      console.log(`Parsed ${blocks.length} translated VTT blocks`);
 
       // Create temporary directory for audio files
       const tempDir = mkdtempSync(join(tmpdir(), 'audio-'));
@@ -79,10 +72,10 @@ export class AudioService {
         console.log('Generating audio for each block...');
         const audioSegments: AudioSegment[] = await Promise.all(
           blocks.map(async (block, index) => {
-            console.log(`\nBlock ${index + 1}:`);
-            console.log(`  Text: "${block.text}"`);
-            console.log(`  Timecode: ${block.timecode}`);
-            console.log(`  Target duration: ${block.duration}ms`);
+            // console.log(`\nBlock ${index + 1}:`);
+            // console.log(`  Text: "${block.text}"`);
+            // console.log(`  Timecode: ${block.timecode}`);
+            // console.log(`  Target duration: ${block.duration}ms`);
 
             const audio = await this.openai.audio.speech.create({
               model: 'tts-1',
@@ -96,7 +89,7 @@ export class AudioService {
 
             // Get actual duration using ffmpeg
             const actualDuration = await this.getAudioDuration(segmentPath);
-            console.log(`  Actual duration: ${actualDuration}ms`);
+            // console.log(`  Actual duration: ${actualDuration}ms`);
 
             return {
               timecode: block.timecode,
@@ -149,9 +142,9 @@ export class AudioService {
         }
       }
     } catch (error) {
-      console.error('Error in SRT-based audio translation:', error);
+      console.error('Error in VTT-based audio translation:', error);
       throw new Error(
-        `Failed to translate audio from SRT: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to translate audio from VTT: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
   }

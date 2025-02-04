@@ -85,7 +85,7 @@ export class AudioTrackController {
       }
 
       // Translate the audio using SRT data
-      const translatedAudio = await this.audioService.translateAudioFromSRT(
+      const translatedAudio = await this.audioService.generateAudioFromVTT(
         sourceSubtitles.srt_data,
         { targetLanguage: language_code }
       );
@@ -170,7 +170,7 @@ export class AudioTrackController {
       }
 
       // Translate the audio directly
-      const translatedAudio = await this.audioService.translateAudioFromSRT(sourceTrack.url, {
+      const translatedAudio = await this.audioService.generateAudioFromVTT(sourceTrack.url, {
         targetLanguage: language_code
       });
 

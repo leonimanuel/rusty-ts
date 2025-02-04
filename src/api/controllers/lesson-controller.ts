@@ -46,11 +46,7 @@ export class LessonController {
             order_index,
             videos:videos(
               id,
-              url,
-              subtitles(
-                id,
-                url
-              )
+              url
             )
           )
         `)
