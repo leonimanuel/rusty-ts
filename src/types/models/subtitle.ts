@@ -5,6 +5,7 @@ export interface Subtitle {
   video_id: string
   language: SupportedLanguage
   srt_data: string
+  url: string | null
   created_at: Date
   updated_at: Date
 }

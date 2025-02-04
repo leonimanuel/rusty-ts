@@ -7,8 +7,28 @@ import { promisify } from 'util'
 import { writeFile, unlink, readFile } from 'fs/promises'
 import { join } from 'path'
 import os from 'os'
+import { SupportedLanguage } from '../../types/common'
+import { SubtitleInsert } from '../../types/models/subtitle'
 
 const execAsync = promisify(exec)
+
+type ISO6392Code = 'eng' | 'spa' | 'fra' | 'deu' | 'ita' | 'por' | 'rus' | 'zho' | 'jpn' | 'kor'
+
+const getISO6392Code = (iso6391: SupportedLanguage): ISO6392Code => {
+  const mapping: Record<SupportedLanguage, ISO6392Code> = {
+    en: 'eng',
+    es: 'spa',
+    fr: 'fra',
+    de: 'deu',
+    it: 'ita',
+    pt: 'por',
+    ru: 'rus',
+    zh: 'zho',
+    ja: 'jpn',
+    ko: 'kor'
+  }
+  return mapping[iso6391]
+}
 
 export class VideosController {
   private subtitleService: SubtitleService
@@ -25,20 +45,17 @@ export class VideosController {
   create = async (req: Request, res: Response): Promise<Response> => {
     console.log('Starting video creation process...')
     
+    const languages = (req.body.languages || []) as SupportedLanguage[]
+    const lessonId = req.body.lessonId
+    console.log('Requested languages:', languages)
+
     const tempDir = os.tmpdir()
     const tempVideoPath = join(tempDir, `temp_${Date.now()}.mp4`)
     const tempAudioPath = join(tempDir, `audio_${Date.now()}.mp3`)
     const tempVttPath = join(tempDir, `temp_${Date.now()}.vtt`)
-    const tempSrtPath = join(tempDir, `temp_${Date.now()}.srt`)  // Intermediate SRT
+    const tempSrtPath = join(tempDir, `temp_${Date.now()}.srt`)
+    const translatedSrtPaths: string[] = []
     const outputVideoPath = join(tempDir, `output_${Date.now()}.mp4`)
-
-    console.log('Temporary files:', {
-      tempVideoPath,
-      tempAudioPath,
-      tempVttPath,
-      tempSrtPath,
-      outputVideoPath
-    })
 
     try {
       if (!req.file) {
@@ -59,32 +76,169 @@ export class VideosController {
       )
       console.log('Audio extracted successfully')
 
-      console.log('Generating VTT from audio...')
+      console.log('Generating English VTT from audio...')
       const vttData = await this.subtitleService.transcribeToVTT(tempAudioPath)
       await writeFile(tempVttPath, vttData)
-      console.log('VTT generated successfully')
+      console.log('English VTT generated successfully')
 
-      console.log('Converting VTT to SRT...')
+      console.log('Converting English VTT to SRT...')
       await execAsync(
         `ffmpeg -i ${tempVttPath} ${tempSrtPath}`
       )
-      console.log('VTT converted to SRT successfully')
+      console.log('English VTT converted to SRT successfully')
 
-      console.log('Adding subtitles to video...')
-      await execAsync(
-        `ffmpeg -i ${tempVideoPath} -i ${tempSrtPath} ` +
-        `-map 0:v -map 0:a -map 1 ` +
-        `-c:v copy -c:a copy ` +
-        `-c:s mov_text ` +
-        `-metadata:s:s:0 language=eng ` +
-        `-metadata:s:s:0 handler="English Subtitles" ` +
-        `${outputVideoPath}`
+      // Upload English VTT file
+      console.log('Uploading English VTT file...')
+      const englishVttBuffer = await readFile(tempVttPath)
+      const englishVttFileName = `subtitles/${Date.now()}_eng.vtt`
+      
+      const { data: englishVttData, error: englishVttError } = await supabase.storage
+        .from('lesson-videos')
+        .upload(englishVttFileName, englishVttBuffer, {
+          contentType: 'text/vtt',
+          upsert: true
+        })
+
+      if (englishVttError) {
+        console.error('Error uploading English VTT:', englishVttError)
+        throw englishVttError
+      }
+
+      const { data: englishVttUrl } = supabase.storage
+        .from('lesson-videos')
+        .getPublicUrl(englishVttFileName)
+
+      console.log('English VTT uploaded successfully:', englishVttUrl.publicUrl)
+
+      // Generate and upload translated subtitles
+      const translatedVttUrls: Record<string, string> = {}
+      
+      if (languages.length > 0) {
+        console.log('Starting subtitle translations...')
+        const englishSrtContent = await readFile(tempSrtPath, 'utf-8')
+
+        for (const lang of languages) {
+          console.log(`Translating subtitles to ${lang}...`)
+          const translatedSrt = await this.subtitleService.translateSubtitles(englishSrtContent, lang)
+          const translatedSrtPath = join(tempDir, `temp_${Date.now()}_${lang}.srt`)
+          await writeFile(translatedSrtPath, translatedSrt)
+          translatedSrtPaths.push(translatedSrtPath)
+
+          // Convert SRT to VTT and upload
+          const translatedVttPath = join(tempDir, `temp_${Date.now()}_${lang}.vtt`)
+          await execAsync(`ffmpeg -i ${translatedSrtPath} ${translatedVttPath}`)
+          
+          const translatedVttBuffer = await readFile(translatedVttPath)
+          const translatedVttFileName = `subtitles/${Date.now()}_${lang}.vtt`
+
+          const { error: translatedVttError } = await supabase.storage
+            .from('lesson-videos')
+            .upload(translatedVttFileName, translatedVttBuffer, {
+              contentType: 'text/vtt',
+              upsert: true
+            })
+
+          if (translatedVttError) {
+            console.error(`Error uploading ${lang} VTT:`, translatedVttError)
+            throw translatedVttError
+          }
+
+          const { data: translatedVttUrl } = supabase.storage
+            .from('lesson-videos')
+            .getPublicUrl(translatedVttFileName)
+
+          translatedVttUrls[lang] = translatedVttUrl.publicUrl
+          console.log(`${lang} VTT uploaded successfully:`, translatedVttUrl.publicUrl)
+
+          // Clean up temporary VTT file
+          await unlink(translatedVttPath)
+        }
+        console.log('All translations completed and uploaded')
+      }
+
+      const getLanguageTitle = (code: SupportedLanguage): string => {
+        const titles: Record<SupportedLanguage, string> = {
+          en: 'English',
+          es: 'Spanish',
+          fr: 'French',
+          de: 'German',
+          it: 'Italian',
+          pt: 'Portuguese',
+          ru: 'Russian',
+          zh: 'Chinese',
+          ja: 'Japanese',
+          ko: 'Korean'
+        }
+        return titles[code]
+      }
+
+      // Construct ffmpeg command with all subtitle tracks
+      console.log('Adding all subtitle tracks to video...')
+      const inputFiles = [
+        `-i "${tempVideoPath}"`,
+        `-i "${tempSrtPath}"`, // English subtitles
+        ...translatedSrtPaths.map(path => `-i "${path}"`)
+      ].join(' ')
+
+      const mappings = [
+        `-map 0:v`, // video stream
+        `-map 0:a`, // audio stream
+        `-map 1`, // English subtitles
+        ...translatedSrtPaths.map((_, index) => `-map ${index + 2}`) // translated subtitles
+      ].join(' ')
+
+      // Metadata for each subtitle stream
+      const subtitleMetadata = [
+        // English subtitles (stream 2)
+        `-disposition:s:2 default`,
+        `-metadata:s:2 language=${getISO6392Code('en')}`,
+        `-metadata:s:2 handler_name="English"`,
+        `-metadata:s:2 title="English"`,
+        // Additional languages
+        ...languages.map((lang, index) => {
+          const title = getLanguageTitle(lang)
+          return [
+            `-disposition:s:${index + 3} 0`,
+            `-metadata:s:${index + 3} language=${getISO6392Code(lang)}`,
+            `-metadata:s:${index + 3} handler_name="${title}"`,
+            `-metadata:s:${index + 3} title="${title}"`
+          ].join(' ')
+        })
+      ].join(' ')
+
+      const ffmpegCommand = `ffmpeg ${[
+        inputFiles,
+        mappings,
+        `-c:v copy -c:a copy`,
+        `-c:s mov_text`,
+        subtitleMetadata,
+        `-movflags +faststart`,  // Optimize for streaming
+        `"${outputVideoPath}"`
+      ].join(' ')}`
+
+      await execAsync(ffmpegCommand)
+      console.log('All subtitle tracks added successfully')
+
+      // Verify subtitle tracks with ffprobe
+      console.log('Verifying subtitle tracks...')
+      const { stdout: probeOutput } = await execAsync(
+        `ffprobe -v quiet -print_format json -show_streams -show_format "${outputVideoPath}"`
       )
-      console.log('Subtitles added successfully')
+      
+      const probeData = JSON.parse(probeOutput)
+      const subtitleStreams = probeData.streams.filter((s: any) => s.codec_type === 'subtitle')
+      
+      // console.log('Detected subtitle tracks:', subtitleStreams.map((s: any) => ({
+      //   index: s.index,
+      //   codec: s.codec_name,
+      //   language: s.tags?.language,
+      //   handler: s.tags?.handler_name,
+      //   title: s.tags?.title
+      // })))
 
-      console.log('Reading output video...')
+      // console.log('Reading output video...')
       const videoBuffer = await readFile(outputVideoPath)
-      console.log('Video read successfully', { size: videoBuffer.length })
+      // console.log('Video read successfully', { size: videoBuffer.length })
 
       const fileName = `video/${Date.now()}.mp4`
       console.log('Uploading to Supabase storage...', { fileName })
@@ -108,16 +262,101 @@ export class VideosController {
         .getPublicUrl(fileName)
       console.log('Public URL generated:', publicUrl.publicUrl)
 
+      // Create video record in database
+      console.log('Creating video record...')
       const videoData: VideoInsert = {
         url: publicUrl.publicUrl,
         title: req.body.title || null,
         description: req.body.description || null,
       }
 
+      const { data: savedVideo, error: videoError } = await supabase
+        .from('videos')
+        .insert(videoData)
+        .select()
+        .single()
+
+      if (videoError) {
+        console.error('Error creating video record:', videoError)
+        throw videoError
+      }
+
+      console.log('Video record created successfully:', savedVideo)
+
+      // Create lesson_video record if lessonId is provided
+      if (lessonId) {
+        console.log('Creating lesson_video record...')
+        const lessonVideoData = {
+          lesson_id: lessonId,
+          video_id: savedVideo.id,
+          order_index: 0 // Default to 0 if not specified
+        }
+
+        const { error: lessonVideoError } = await supabase
+          .from('lesson_videos')
+          .insert(lessonVideoData)
+
+        if (lessonVideoError) {
+          console.error('Error creating lesson_video record:', lessonVideoError)
+          throw lessonVideoError
+        }
+
+        console.log('Lesson_video record created successfully')
+      }
+
+      // Create subtitle records
+      console.log('Creating subtitle records...')
+      
+      // Create English subtitle record
+      const englishSubtitleData: SubtitleInsert = {
+        video_id: savedVideo.id,
+        language: 'en',
+        srt_data: vttData,
+        url: englishVttUrl.publicUrl
+      }
+
+      const { error: englishSubtitleError } = await supabase
+        .from('subtitles')
+        .insert(englishSubtitleData)
+
+      if (englishSubtitleError) {
+        console.error('Error creating English subtitle record:', englishSubtitleError)
+        throw englishSubtitleError
+      }
+
+      // Create translated subtitle records
+      const translatedSubtitles = await Promise.all(
+        languages.map(async (lang) => {
+          const subtitleData: SubtitleInsert = {
+            video_id: savedVideo.id,
+            language: lang,
+            srt_data: await readFile(translatedSrtPaths.find(p => p.includes(lang)) || '', 'utf-8'),
+            url: translatedVttUrls[lang]
+          }
+
+          const { error: subtitleError } = await supabase
+            .from('subtitles')
+            .insert(subtitleData)
+
+          if (subtitleError) {
+            console.error(`Error creating ${lang} subtitle record:`, subtitleError)
+            throw subtitleError
+          }
+
+          return subtitleData
+        })
+      )
+
+      console.log('All subtitle records created successfully')
+
       console.log('Video processing completed successfully')
       return res.status(201).json({
         message: 'Video created successfully',
-        videoId: publicUrl.publicUrl,
+        video: savedVideo,
+        subtitles: {
+          en: englishSubtitleData,
+          ...Object.fromEntries(translatedSubtitles.map(s => [s.language, s]))
+        }
       })
     } catch (error) {
       console.error('Error creating video:', {
@@ -136,6 +375,9 @@ export class VideosController {
         await unlink(tempAudioPath)
         await unlink(tempVttPath)
         await unlink(tempSrtPath)
+        for (const path of translatedSrtPaths) {
+          await unlink(path)
+        }
         await unlink(outputVideoPath)
         console.log('Cleanup completed successfully')
       } catch (error) {

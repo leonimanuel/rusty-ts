@@ -47,11 +47,9 @@ export class LessonController {
             videos:videos(
               id,
               url,
-              audio_tracks(
+              subtitles(
                 id,
-                url,
-                language,
-                subtitles(srt_data)
+                url
               )
             )
           )
