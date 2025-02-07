@@ -3,6 +3,7 @@ import multer from 'multer'
 import subtitleRoutes from './subtitle-routes'
 import audioTrackRoutes from './audio-track-routes'
 import videosController from '../controllers/videos-controller'
+import { requirePermission } from '../middleware/auth'
 
 const router = Router()
 
@@ -22,7 +23,10 @@ const upload = multer({
 })
 
 // Create new video with file upload
-router.post('/', upload.single('video'), videosController.create)
+router.post('/',
+  requirePermission('create:video'),
+  (req, res) => videosController.create(req, res)
+)
 
 // Mount subtitle routes under videos
 router.use('/:videoId/subtitles', subtitleRoutes)

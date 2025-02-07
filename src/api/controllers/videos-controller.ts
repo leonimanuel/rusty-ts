@@ -10,6 +10,7 @@ import os from 'os'
 import { SupportedLanguage } from '../../types/common'
 import { SubtitleInsert } from '../../types/models/subtitle'
 import { AudioService } from '../../services/audio/audio-service'
+import { AuthenticatedRequest } from '../middleware/auth'
 
 const execAsync = promisify(exec)
 
@@ -45,9 +46,14 @@ export class VideosController {
   /**
    * Create a new video by uploading an MP4 file with embedded soft subtitles
    */
-  create = async (req: Request, res: Response): Promise<Response> => {
+  create = async (req: AuthenticatedRequest, res: Response): Promise<Response> => {
     console.log('Starting video creation process...')
     
+    const { companyId } = req.params
+    if (!companyId) {
+      return res.status(400).json({ error: 'Company ID is required' })
+    }
+
     const languages = (req.body.languages || []) as SupportedLanguage[]
     const lessonId = req.body.lessonId
     console.log('Requested languages:', languages)

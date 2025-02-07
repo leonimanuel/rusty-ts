@@ -1,11 +1,14 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { supabase } from '../../lib/supabase';
+import { Permission, hasPermission } from '../../utils/permissions';
+import { UserRole } from '../../types/common';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
     email?: string;
-    role?: string;
+    role?: UserRole;
+    companyId?: string;
   };
 }
 
@@ -75,4 +78,43 @@ export const requireRole = (allowedRoles: string[]): RequestHandler => {
 
     next();
   };
-}; 
+};
+
+// Middleware to check if user has required permission
+export const requirePermission = (permission: Permission): RequestHandler => {
+  return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    if (!req.user?.id) {
+      res.status(401).json({ error: 'Unauthorized' })
+      return
+    }
+
+    // Get user's role for the specific company if companyId is in params
+    const companyId = req.params.companyId
+    if (companyId) {
+      const { data: userCompany, error } = await supabase
+        .from('user_companies')
+        .select('role')
+        .eq('user_id', req.user.id)
+        .eq('company_id', companyId)
+        .single()
+
+      if (error || !userCompany) {
+        res.status(403).json({ error: 'No access to this company' })
+        return
+      }
+
+      if (!hasPermission(userCompany.role, permission)) {
+        res.status(403).json({ error: 'Insufficient permissions' })
+        return
+      }
+    } else {
+      // Fall back to user's default role if no company context
+      if (!req.user.role || !hasPermission(req.user.role, permission)) {
+        res.status(403).json({ error: 'Insufficient permissions' })
+        return
+      }
+    }
+
+    next()
+  }
+}
