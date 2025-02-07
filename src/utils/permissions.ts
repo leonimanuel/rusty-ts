@@ -5,6 +5,7 @@ export type Permission =
   | 'create:lesson'
   | 'edit:lesson'
   | 'delete:lesson'
+  | 'view:lesson'
   | 'create:video'
   | 'edit:video'
   | 'delete:video'
@@ -18,6 +19,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'create:lesson',
     'edit:lesson', 
     'delete:lesson',
+    'view:lesson',
     'create:video',
     'edit:video',
     'delete:video',
@@ -28,7 +30,8 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
   company_admin: [
     'create:lesson',
     'edit:lesson',
-    'delete:lesson', 
+    'delete:lesson',
+    'view:lesson',
     'create:video',
     'edit:video',
     'delete:video',
@@ -38,10 +41,13 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
   content_creator: [
     'create:lesson',
     'edit:lesson',
+    'view:lesson',
     'create:video',
     'edit:video'
   ],
-  student: []
+  student: [
+    'view:lesson'
+  ]
 }
 
 // Helper to check if a role has a specific permission
