@@ -61,34 +61,43 @@ export class AuthController {
     try {
       const { email, password } = req.body;
 
-      if (!email || !password) {
-        return res.status(400).json({ error: 'Email and password are required' });
-      }
-
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) {
-        return res.status(401).json({ error: error.message });
+      if (signInError) {
+        return res.status(401).json({ error: signInError.message });
       }
 
-      // Get user profile
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', data.user.id)
-        .single();
+      // Get user's companies and roles
+      const { data: userCompanies, error: companiesError } = await supabase
+        .from('user_companies')
+        .select(`
+          company_id,
+          role,
+          companies:company_id (
+            name
+          )
+        `)
+        .eq('user_id', authData.user.id);
 
-      if (profileError) {
-        console.error('Error fetching profile:', profileError);
+      if (companiesError) {
+        console.error('Error fetching user companies:', companiesError);
+        return res.status(500).json({ error: 'Error fetching user companies' });
       }
 
       return res.json({
-        user: data.user,
-        session: data.session,
-        profile
+        session: authData.session,
+        user: {
+          id: authData.user.id,
+          email: authData.user.email,
+          companies: userCompanies?.map(uc => ({
+            id: uc.company_id,
+            name: uc.companies.name,
+            role: uc.role
+          }))
+        }
       });
     } catch (error) {
       console.error('Login error:', error);
