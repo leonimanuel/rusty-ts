@@ -3,7 +3,7 @@ import multer from 'multer'
 import subtitleRoutes from './subtitle-routes'
 import audioTrackRoutes from './audio-track-routes'
 import videosController from '../controllers/videos-controller'
-import { requireAuth, requirePermission } from '../middleware/auth'
+import { requirePermission } from '../middleware/auth'
 
 const router = Router()
 
@@ -24,8 +24,7 @@ const upload = multer({
 
 // Create new video with file upload
 router.post('/',
-  requireAuth,  // First verify authentication
-  requirePermission('create:video'),  // Then check permissions
+  requirePermission('create:video'),
   upload.single('video'),
   videosController.create
 )

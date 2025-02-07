@@ -1,12 +1,9 @@
 import { Router } from 'express'
 import { LessonController } from '../controllers/lesson-controller'
-import { requireAuth, requirePermission } from '../middleware/auth'
+import { requirePermission } from '../middleware/auth'
 
 const router = Router({ mergeParams: true })
 const lessonController = new LessonController()
-
-// All routes require authentication
-router.use(requireAuth)
 
 // List lessons requires view permission
 router.get('/', 

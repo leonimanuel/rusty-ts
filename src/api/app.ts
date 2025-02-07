@@ -4,6 +4,7 @@ import videoRoutes from './routes/video-routes'
 import authRoutes from './routes/auth-routes'
 import companyRoutes from './routes/company-routes'
 import profileRoutes from './routes/profile-routes'
+import { requireAuth } from './middleware/auth'
 
 const app = express()
 
@@ -37,8 +38,11 @@ app.use(express.json())
 // Handle preflight requests
 app.options('*', cors(corsOptions))
 
-// API Routes
+// Public routes (no auth required)
 app.use('/api/auth', authRoutes)
+
+// Protected routes (require authentication)
+app.use('/api', requireAuth) // Apply requireAuth to all routes under /api except /api/auth
 app.use('/api/videos', videoRoutes)
 app.use('/api/companies', companyRoutes)
 app.use('/api/profiles', profileRoutes)
