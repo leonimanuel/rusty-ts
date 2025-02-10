@@ -1,32 +1,16 @@
 import { Router } from 'express'
-import multer from 'multer'
 import subtitleRoutes from './subtitle-routes'
 import audioTrackRoutes from './audio-track-routes'
-import videosController from '../controllers/videos-controller'
-import { requirePermission } from '../middleware/auth'
+import VideosController from '../controllers/videos-controller'
+import { requireAuth, requirePermission } from '../middleware/auth'
 
-const router = Router()
+const router = Router({ mergeParams: true })
 
-// Configure multer for memory storage
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 500 * 1024 * 1024, // 500MB limit
-  },
-  fileFilter: (_, file, cb) => {
-    if (file.mimetype === 'video/mp4') {
-      cb(null, true)
-    } else {
-      cb(new Error('Only MP4 files are allowed'))
-    }
-  }
-})
-
-// Create new video with file upload
+// POST /api/companies/:companyId/videos
 router.post('/',
+  requireAuth,
   requirePermission('create:video'),
-  upload.single('video'),
-  videosController.create
+  VideosController.create
 )
 
 // Mount subtitle routes under videos

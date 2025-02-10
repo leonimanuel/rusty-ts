@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
-import { VideoInsert } from '../../types/models/video'
+import { MediaInsert } from '../../types/models/media'
+import { LessonMediaInsert } from '../../types/models/lesson-media'
 import { supabase } from '../../lib/supabase'
 import { SubtitleService } from '../../services/subtitles/subtitle-service'
 import { exec } from 'child_process'
@@ -11,6 +12,7 @@ import { SupportedLanguage } from '../../types/common'
 import { SubtitleInsert } from '../../types/models/subtitle'
 import { AudioService } from '../../services/audio/audio-service'
 import { AuthenticatedRequest } from '../middleware/auth'
+import axios from 'axios'
 
 const execAsync = promisify(exec)
 
@@ -48,10 +50,13 @@ export class VideosController {
    */
   create = async (req: AuthenticatedRequest, res: Response): Promise<Response> => {
     console.log('Starting video creation process...')
-    
-    const { companyId } = req.params
-    if (!companyId) {
-      return res.status(400).json({ error: 'Company ID is required' })
+
+    const { url } = req.body
+    if (!url) {
+      return res.status(400).json({
+        error: 'No video URL provided',
+        details: 'Request must include a video URL'
+      })
     }
 
     const languages = (req.body.languages || []) as SupportedLanguage[]
@@ -67,17 +72,16 @@ export class VideosController {
     const outputVideoPath = join(tempDir, `output_${Date.now()}.mp4`)
 
     try {
-      if (!req.file) {
-        console.log('No video file provided in request')
-        return res.status(400).json({
-          error: 'No video file provided',
-          details: 'Request must include an MP4 file'
-        })
-      }
+      // Download video from URL
+      console.log('Downloading video from URL...')
+      const response = await axios({
+        method: 'GET',
+        url: url,
+        responseType: 'arraybuffer'
+      })
 
-      console.log('Saving uploaded file...', { size: req.file.size })
-      await writeFile(tempVideoPath, req.file.buffer)
-      console.log('File saved successfully')
+      await writeFile(tempVideoPath, response.data)
+      console.log('Video downloaded successfully')
 
       console.log('Extracting and compressing audio...')
       await execAsync(
@@ -311,42 +315,41 @@ export class VideosController {
 
       // Create video record in database
       console.log('Creating video record...')
-      const videoData: VideoInsert = {
+      const videoData: MediaInsert = {
         url: publicUrl.publicUrl,
-        title: req.body.title || null,
-        description: req.body.description || null,
+        type: 'video',
       }
 
-      const { data: savedVideo, error: videoError } = await supabase
-        .from('videos')
+      const { data: savedMedia, error: mediaError } = await supabase
+        .from('medias')
         .insert(videoData)
         .select()
         .single()
 
-      if (videoError) {
-        console.error('Error creating video record:', videoError)
-        throw videoError
+      if (mediaError) {
+        console.error('Error creating media record:', mediaError)
+        throw mediaError
       }
 
-      // Create lesson_video record if lessonId is provided
+      // Create lesson_media record if lessonId is provided
       if (lessonId) {
-        console.log('Creating lesson_video record...')
-        const lessonVideoData = {
+        console.log('Creating lesson_media record...')
+        const lessonMediaData: LessonMediaInsert = {
           lesson_id: lessonId,
-          video_id: savedVideo.id,
-          order_index: 0 // Default to 0 if not specified
+          media_id: savedMedia.id,
+          order_index: 0
         }
 
-        const { error: lessonVideoError } = await supabase
-          .from('lesson_videos')
-          .insert(lessonVideoData)
+        const { error: lessonMediaError } = await supabase
+          .from('lesson_medias')
+          .insert(lessonMediaData)
 
-        if (lessonVideoError) {
-          console.error('Error creating lesson_video record:', lessonVideoError)
-          throw lessonVideoError
+        if (lessonMediaError) {
+          console.error('Error creating lesson_media record:', lessonMediaError)
+          throw lessonMediaError
         }
 
-        console.log('Lesson_video record created successfully')
+        console.log('Lesson_media record created successfully')
       }
 
       // Create subtitle records
@@ -354,7 +357,7 @@ export class VideosController {
       
       // Create English subtitle record
       const englishSubtitleData: SubtitleInsert = {
-        video_id: savedVideo.id,
+        media_id: savedMedia.id,
         language: 'en',
         srt_data: vttData,
         url: englishVttUrl.publicUrl
@@ -373,7 +376,7 @@ export class VideosController {
       const translatedSubtitlesInsert = await Promise.all(
         languages.map(async (lang) => {
           const subtitleData: SubtitleInsert = {
-            video_id: savedVideo.id,
+            media_id: savedMedia.id,
             language: lang,
             srt_data: await readFile(translatedSrtPaths.find(p => p.includes(lang)) || '', 'utf-8'),
             url: translatedVttUrls[lang]
@@ -397,7 +400,7 @@ export class VideosController {
       return res.status(201).json({
         message: 'Video created successfully',
         url: publicUrl.publicUrl,
-        // video: savedVideo,
+        // media: savedMedia
         // subtitles: {
           // en: englishSubtitleData,
       //     ...Object.fromEntries(translatedSubtitles.map(s => [s.language, s]))

@@ -3,6 +3,7 @@ export * from './profile';
 export * from './user-company';
 export * from './guide';
 export * from './lesson';
-export * from './video';
+export * from './lesson-media';
+export * from './media';
 export * from './subtitle';
 export * from './audio-track'; 

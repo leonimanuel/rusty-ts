@@ -1,8 +1,9 @@
 import { Lesson, LessonInsert, LessonUpdate } from './models/lesson'
-import { Video, VideoInsert, VideoUpdate } from './models/video'
+import { Media, MediaInsert, MediaUpdate } from './models/media'
+import { LessonMedia, LessonMediaInsert, LessonMediaUpdate } from './models/lesson-media'
 import { Subtitle, SubtitleInsert, SubtitleUpdate } from './models/subtitle'
 import { AudioTrack, AudioTrackInsert, AudioTrackUpdate } from './models/audio-track'
-import { SupportedLanguage } from './common'
+import { SupportedLanguage, MediaType } from './common'
 
 export interface Database {
   public: {
@@ -12,10 +13,15 @@ export interface Database {
         Insert: LessonInsert
         Update: LessonUpdate
       }
+      lesson_medias: {
+        Row: LessonMedia
+        Insert: LessonMediaInsert
+        Update: LessonMediaUpdate
+      }
       videos: {
-        Row: Video
-        Insert: VideoInsert
-        Update: VideoUpdate
+        Row: Media
+        Insert: MediaInsert
+        Update: MediaUpdate
       }
       subtitles: {
         Row: Subtitle
@@ -36,13 +42,15 @@ export interface Database {
     }
     Enums: {
       supported_language: SupportedLanguage
+      media_type: MediaType
     }
   }
 }
 
 // Re-export all models and types for convenience
 export * from './models/lesson'
-export * from './models/video'
+export * from './models/lesson-media'
+export * from './models/media'
 export * from './models/subtitle'
 export * from './models/audio-track'
 export * from './common' 

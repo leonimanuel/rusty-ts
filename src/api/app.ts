@@ -43,7 +43,6 @@ app.use('/api/auth', authRoutes)
 
 // Protected routes (require authentication)
 app.use('/api', requireAuth) // Apply requireAuth to all routes under /api except /api/auth
-app.use('/api/videos', videoRoutes)
 app.use('/api/companies', companyRoutes)
 app.use('/api/profiles', profileRoutes)
 

@@ -56,9 +56,10 @@ export const requirePermission = (permission: Permission): RequestHandler => {
       return;
     }
 
+    // Extract companyId from URL path parameters
     const companyId = req.params.companyId;
     if (!companyId) {
-      res.status(400).json({ error: 'Company ID required' });
+      res.status(400).json({ error: 'Company ID not found in URL path' });
       return;
     }
 
