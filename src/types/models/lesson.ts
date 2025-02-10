@@ -6,6 +6,7 @@ export interface Lesson extends BaseModel {
   guide_id?: string
   order_index: number
   media_type: MediaType
+  creator_id: string
 }
 
 export type LessonInsert = Omit<Lesson, 'id' | 'created_at' | 'updated_at'>
